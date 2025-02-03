@@ -7,7 +7,6 @@ declare global {
         model: string;
         price: number;
         electric: boolean;
-        edited: boolean;
     }
 }
 

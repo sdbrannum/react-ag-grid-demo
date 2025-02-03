@@ -1,4 +1,4 @@
-import {useState, useMemo, useEffect} from 'react'
+import {useState, useMemo, useEffect, useCallback, useRef} from 'react'
 import api from './api';
 import {AgGridReact} from 'ag-grid-react';
 import {
@@ -7,7 +7,8 @@ import {
     ModuleRegistry,
     SelectionChangedEvent,
     CellValueChangedEvent,
-    RowClassParams
+    RowClassParams,
+    GetRowIdParams,
 } from 'ag-grid-community';
 // Register all Community features
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -15,8 +16,12 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 let dataLoaded = false;
 
 function App() {
+    const gridRef = useRef<AgGridReact<Vehicle>>(null);
+    const getRowId = useCallback((e: GetRowIdParams<Vehicle>) => e.data.id, []);
     // Row Data: The data to be displayed.
     const [rowData, setRowData] = useState<Vehicle[]>([]);
+    // edited is purposefully not stored as a property of each row data item
+    const [editedIds, setEditedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     useEffect(() => {
         async function loadData() {
@@ -37,7 +42,7 @@ function App() {
 
     useEffect(() => {
         const warnBeforeLeaving = (e: BeforeUnloadEvent) => {
-            if (rowData.some(i => i.edited)) {
+            if (editedIds.size) {
                 e.preventDefault();
                 return "You have unsaved changes";
             }
@@ -46,7 +51,7 @@ function App() {
 
         window.addEventListener("beforeunload", warnBeforeLeaving);
         return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
-    }, [rowData])
+    }, [editedIds])
 
     const defaultColDef = useMemo<ColDef>(() => ({
         filter: true,
@@ -79,25 +84,37 @@ function App() {
     const onCellValueChanged = (event: CellValueChangedEvent<Vehicle>) => {
         console.log("Data after change is", event.data);
         // set edited = true, this can be used later to save it all in a batch
-        const editedIdx = rowData.findIndex(i => i.id === event.data.id);
-        setRowData(prev => prev.map((item, idx) => editedIdx === idx ? {
-            ...item,
-            edited: true
-        } : item))
+        // if we did setRowData, we lose the undo/redo functionality
+        // const editedIdx = rowData.findIndex(i => i.id === event.data.id);
+        // setRowData(prev => prev.map((item, idx) => editedIdx === idx ? {
+        //     ...item,
+        //     edited: true
+        // } : item))
+
+        // if we just directly edit through the param or grid api then rowData is not updated correctly
+        // event.data.edited = true;
+        // if (event.node.data) {
+        //     event.node.setData({...event.node.data, edited: true})
+        // }
+        setEditedIds(prev => new Set([event.data.id, ...prev]));
     }
 
     const getRowStyle = (params: RowClassParams<Vehicle>) => {
-        if (params.data?.edited) {
+        if (params.data?.id && editedIds.has(params.data.id)) {
             return {background: 'yellow'};
         }
     };
 
-    const edited = rowData.filter(v => v.edited).length;
+    const onSave = () => {
+        // get ids from editedId and corresponding from rowData
+    }
 
     return (
         <>
             <div style={{height: '2rem', display: 'flex', justifyContent: 'flex-end', alignItems: 'center'}}>
-                <button style={{backgroundColor: edited ? 'yellow' : 'initial'}}>Save ({edited})</button>
+                <button style={{backgroundColor: editedIds.size ? 'yellow' : 'initial'}} onClick={onSave}>Save
+                    ({editedIds.size})
+                </button>
                 <button style={{marginLeft: '0.5rem'}} onClick={onAddRow}>Add Row</button>
                 <button style={{marginLeft: '0.5rem'}}
                         onClick={onDelete}
@@ -109,6 +126,8 @@ function App() {
                 style={{height: 'calc(100vh - 2rem)', width: '100vw'}}
             >
                 <AgGridReact
+                    ref={gridRef}
+                    getRowId={getRowId}
                     rowData={rowData}
                     rowSelection={{mode: 'multiRow'}}
                     onSelectionChanged={onSelection}
